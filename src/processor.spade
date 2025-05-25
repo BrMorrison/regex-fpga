@@ -1,0 +1,120 @@
+use lib::alu;
+
+struct port ROMPort<T, Addr> {
+    addr: inv &Addr,
+    read: &T,
+}
+
+struct OpData {
+    opcode: uint<3>,
+    inverted: bool,
+    branch: bool,
+    dest1: uint<12>,
+    dest2: uint<12>,
+    char_min: uint<8>,
+    char_max: uint<8>,
+}
+
+fn instruction_decode(instruction: uint<32>) -> OpData {
+    let opcode = trunc(instruction >> 29);
+    OpData$(
+        opcode:   opcode,
+        branch:   (opcode & 1) != 0,
+        inverted: (instruction & 0x1000_0000) != 0,
+        dest1:    trunc(instruction >> 16),
+        dest2:    trunc(instruction >> 2),
+        char_min: trunc(instruction >> 8),
+        char_max: trunc(instruction),
+    )
+}
+
+entity processor<SAddr>(
+    clk: clock,
+    rst: bool,
+    i_rom: ROMPort<uint<32>, uint<12>>,
+    s_rom: ROMPort<uint<8>, SAddr>) -> (bool, bool) {
+
+    // Register the values read in from memory
+    reg(clk) r_char: uint<8> reset(rst: 0) = *s_rom.read;
+    reg(clk) r_instruction: uint<32> reset(rst: 0) = *i_rom.read;
+
+    let op_data = instruction_decode(r_instruction);
+    let (dest1, dest2) = (op_data.dest1, op_data.dest2);
+
+    // Instantiate the alu and parse its output.
+    let control = alu::alu$(
+        char:     r_char,
+        branch:   op_data.branch,
+        inverted: op_data.inverted,
+        char_min: op_data.char_min,
+        char_max: op_data.char_max);
+
+    let (alu_failure, alu_consume, alu_jump) = match control {
+        alu::ControlSignal::Failure => (true, false, false),
+        alu::ControlSignal::Consume => (false, true, false),
+        alu::ControlSignal::Jump => (false, false, true),
+        alu::ControlSignal::None => (false, false, false),
+    };
+
+    // Use the opcode to generate internal signals
+    let opcode = op_data.opcode;
+    let (success, failure, consume, jump) = match opcode {
+        0b000 => (false, false, false, true),               // Jump
+        0b001 => (false, false, false, true),               // Split
+        0b010 => (false, alu_failure, alu_consume, false),  // Compare
+        0b011 => (false, false, false, alu_jump),           // Branch
+        0b100 => (false, false, false, false),              // Save
+        0b111 => (true, false, false, false),               // Match
+        _     => (false, false, false, false),              // Unused
+    };
+
+    // Registered Output Signals
+    reg(clk) r_stopped: bool reset(rst: false) = if failure || success {
+        true
+    } else {
+        r_stopped
+    };
+    reg(clk) r_success: bool reset(rst: false) = if success { true } else { r_success };
+
+    // Registered Output Addresses
+    reg(clk) r_sc: SAddr reset(rst: 0) = if consume { trunc(r_sc + 1) } else { r_sc };
+    reg(clk) r_pc: uint<12> reset(rst: 0) = if jump {
+        op_data.dest1
+    } else if failure || r_stopped {
+        r_pc
+    } else {
+        trunc(r_pc + 1)
+    };
+    set s_rom.addr = r_sc;
+    set i_rom.addr = r_pc;
+
+    (r_stopped, r_success)
+}
+
+// ----------------- Test Code ---------------------
+
+struct TestOut {
+    stopped: bool,
+    success: bool,
+    pc: uint<12>,
+    sc: uint<12>,
+}
+
+entity processor_test_harness(clk: clock, rst: bool, instruction: uint<32>, string: uint<8>) -> TestOut {
+    let (i_rom, i_rom_i) = port;
+    let (s_rom, s_rom_i) = port;
+    let (stopped, success) = inst processor(clk, rst, i_rom, s_rom);
+
+    set i_rom_i.read = instruction;
+    set s_rom_i.read = string;
+
+    let pc = *i_rom_i.addr;
+    let sc = *s_rom_i.addr;
+
+    TestOut(
+        stopped,
+        success,
+        pc,
+        sc,
+    )
+}

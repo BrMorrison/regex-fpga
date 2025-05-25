@@ -5,19 +5,40 @@ from spade import SpadeExt
 from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge
 
-from enum import IntEnum
-
 def to_int(c: str) -> int:
     return int.from_bytes(c.encode('utf-8'))
 
-class OpCode(IntEnum):
-    Match   = 0
-    Die     = 1
-    Consume = 2
-    Jump    = 3
-    Split   = 4
-    Compare = 5
-    OptCompare = 6
+def _assert_outputs(dut, failure, consume, jump):
+    dut.o.failure.assert_eq(failure)
+    dut.o.consume.assert_eq(consume)
+    dut.o.jump.assert_eq(jump)
+
+def assert_failure(dut):
+    _assert_outputs(dut, True, False, False)
+
+def assert_consume(dut):
+    _assert_outputs(dut, False, True, False)
+
+def assert_jump(dut):
+    _assert_outputs(dut, False, False, True)
+
+def assert_none(dut):
+    _assert_outputs(dut, False, False, False)
+
+def _set_inputs(dut, branch: bool, inverted: bool, char_min: str, char_max: str):
+    dut.i.i_branch = branch
+    dut.i.i_inverted = inverted
+    dut.i.i_char_min = to_int(char_min)
+    dut.i.i_char_max = to_int(char_max)
+
+def set_compare(dut, char_min: str, char_max: str):
+    _set_inputs(dut, False, False, char_min, char_max)
+
+def set_inv_compare(dut, char_min: str, char_max: str):
+    _set_inputs(dut, False, True, char_min, char_max)
+
+def set_branch(dut, char_min: str, char_max: str):
+    _set_inputs(dut, True, False, char_min, char_max)
 
 @cocotb.test()
 async def test(dut):
@@ -29,109 +50,57 @@ async def test(dut):
         units='ns'
     ).start())
 
-    # Initialize inputs and test Match
-    s.i.i_pc = 0
+    # Initialize Inputs
     s.i.i_char = 0
-    s.i.i_op = OpCode.Match.value
-    s.i.i_inverted_op = False
-    s.i.i_char_op1 = 0
-    s.i.i_char_op2 = 0
-    s.i.i_dest_op1 = 0
-    s.i.i_dest_op2 = 0
+    s.i.i_branch = False
+    s.i.i_inverted = False
+    s.i.i_char_min = 0
+    s.i.i_char_max = 0
 
     await FallingEdge(clk)
     await FallingEdge(clk)
-    s.o.success.assert_eq(True)
-
-    # Test Jump
-    s.i.i_op = OpCode.Jump.value
-    s.i.i_dest_op1 = 123
-    await FallingEdge(clk)
-    s.o.pc_out.assert_eq(123)
-
-    # Test Split
-    s.i.i_op = OpCode.Split.value
-    s.i.i_dest_op1 = 45
-    s.i.i_dest_op2 = 67
-    await FallingEdge(clk)
-    s.o.pc_out.assert_eq(45)
-    s.o.spawn.assert_eq(True)
-    s.o.spawn_addr.assert_eq(67)
 
     # Test Compare - Single character equal
-    s.i.i_op = OpCode.Compare.value
-    s.i.i_pc = 99
-    s.i.i_inverted_op = False
-    s.i.i_char_op1 = to_int('a')
-    s.i.i_char_op2 = to_int('a')
+    set_compare(s, 'a', 'a')
     s.i.i_char = to_int('a')
     await FallingEdge(clk)
-    s.o.pc_out.assert_eq(100)
-    s.o.consume.assert_eq(True)
+    assert_consume(s)
 
     # Test Compare Inverted - Single character equal
-    s.i.i_op = OpCode.Compare.value
-    s.i.i_pc = 100
-    s.i.i_inverted_op = True
-    s.i.i_char_op1 = to_int('a')
-    s.i.i_char_op2 = to_int('a')
+    set_inv_compare(s, 'a', 'a')
     s.i.i_char = to_int('a')
     await FallingEdge(clk)
-    s.o.failure.assert_eq(True)
+    assert_failure(s)
 
     # Test Compare - Single character not equal
-    s.i.i_op = OpCode.Compare.value
-    s.i.i_pc = 101
-    s.i.i_inverted_op = False
-    s.i.i_char_op1 = to_int('a')
-    s.i.i_char_op2 = to_int('a')
+    set_compare(s, 'a', 'a')
     s.i.i_char = to_int('b')
     await FallingEdge(clk)
-    s.o.failure.assert_eq(True)
+    assert_failure(s)
 
     # Test Compare Inverted - Single character not equal
-    s.i.i_op = OpCode.Compare.value
-    s.i.i_pc = 101
-    s.i.i_inverted_op = True
-    s.i.i_char_op1 = to_int('a')
-    s.i.i_char_op2 = to_int('a')
+    set_inv_compare(s, 'a', 'a')
     s.i.i_char = to_int('b')
     await FallingEdge(clk)
-    s.o.consume.assert_eq(True)
-    s.o.pc_out.assert_eq(102)
+    assert_consume(s)
 
     # Test Compare - Character range equal
-    s.i.i_op = OpCode.Compare.value
-    s.i.i_pc = 102
-    s.i.i_inverted_op = False
-    s.i.i_char_op1 = to_int('a')
-    s.i.i_char_op2 = to_int('c')
+    set_compare(s, 'a', 'c')
     s.i.i_char = to_int('b')
     await FallingEdge(clk)
-    s.o.pc_out.assert_eq(103)
-    s.o.consume.assert_eq(True)
+    assert_consume(s)
 
-    # Test OptCompare - Character range equal
-    s.i.i_op = OpCode.OptCompare.value
-    s.i.i_pc = 103
-    s.i.i_inverted_op = False
-    s.i.i_char_op1 = to_int('a')
-    s.i.i_char_op2 = to_int('c')
+    # Test Branch - Character range equal
+    set_branch(s, 'a', 'c')
     s.i.i_char = to_int('b')
-    s.i.i_dest_op1 = 13
     await FallingEdge(clk)
-    s.o.pc_out.assert_eq(13)
+    assert_jump(s)
 
-    # Test OptCompare - Character range not equal
-    s.i.i_op = OpCode.OptCompare.value
-    s.i.i_pc = 103
-    s.i.i_inverted_op = False
-    s.i.i_char_op1 = to_int('a')
-    s.i.i_char_op2 = to_int('c')
+    # Test Branch - Character range not equal
+    set_branch(s, 'a', 'c')
     s.i.i_char = to_int('d')
-    s.i.i_dest_op1 = 13
     await FallingEdge(clk)
-    s.o.pc_out.assert_eq(104)
+    assert_none(s)
 
     await FallingEdge(clk)
     await FallingEdge(clk)
