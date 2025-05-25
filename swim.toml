@@ -1,0 +1,9 @@
+name = "regex"
+
+[synthesis]
+top = "top"
+command = "synth_ice40"
+
+[board]
+name = "Icestick"
+pcf = "icestick.pcf"

@@ -1,0 +1,156 @@
+enum ControlSignals {
+    None,
+    Success,
+    Failure,
+    Consume,
+    Spawn{addr: uint<12>},
+}
+
+enum Instruction {
+    Match,
+    Die,
+    Consume,
+    Save,
+    Jump{dest: uint<12>},
+    Split{dest1: uint<12>, dest2: uint<12>},
+    Compare{inverted: bool, char_min: uint<8>, char_max: uint<8>},
+    OptCompare{dest: uint<12>, char_min: uint<8>, char_max: uint<8>},
+}
+
+fn alu(instruction: Instruction, char: uint<8>, pc: uint<12>) -> (ControlSignals, uint<12>) {
+    let next_pc: uint<12> = trunc(pc + 1);
+    match instruction {
+        Instruction::Match               => (ControlSignals::Success, next_pc),
+        Instruction::Die                 => (ControlSignals::Failure, next_pc),
+        Instruction::Consume             => (ControlSignals::Consume, next_pc),
+        Instruction::Save                => (ControlSignals::None, next_pc),
+        Instruction::Jump(dest)          => (ControlSignals::None, dest),
+        Instruction::Split(dest1, dest2) => (ControlSignals::Spawn(dest2), dest1),
+        Instruction::Compare(inverted, char_min, char_max) => {
+            let in_range = (char >= char_min) && (char <= char_max);
+            if inverted ^^ in_range {
+                (ControlSignals::Consume, next_pc)
+            } else {
+                (ControlSignals::Failure, next_pc)
+            }
+        },
+        Instruction::OptCompare(dest, char_min, char_max) => {
+            let in_range = (char >= char_min) && (char <= char_max);
+            if in_range {
+                (ControlSignals::None, dest)
+            } else {
+                (ControlSignals::None, next_pc)
+            }
+        },
+    }
+}
+
+// ----------------- Test Code ---------------------
+
+struct TestHarnessInput {
+    pc: uint<12>,
+    char_in: uint<8>,
+    op: uint<3>,
+    inverted_op: bool,
+    char_op1: uint<8>,
+    char_op2: uint<8>,
+    dest_op1: uint<12>,
+    dest_op2: uint<12>,
+}
+
+struct TestHarnessOutput {
+    success: bool,
+    failure: bool,
+    consume: bool,
+    spawn: bool,
+    spawn_addr: uint<12>,
+    pc_out: uint<12>,
+}
+
+fn _output_to_test_output(alu_out: (ControlSignals, uint<12>)) -> TestHarnessOutput {
+    let (control, pc) = alu_out;
+    match control {
+        ControlSignals::None => TestHarnessOutput$(
+            success: false,
+            failure: false,
+            consume: false,
+            spawn: false,
+            spawn_addr: 0,
+            pc_out: pc,
+        ),
+        ControlSignals::Success => TestHarnessOutput$( 
+            success: true,
+            failure: false,
+            consume: false,
+            spawn: false,
+            spawn_addr: 0,
+            pc_out: pc,
+        ),
+        ControlSignals::Failure => TestHarnessOutput$(
+            success: false,
+            failure: true,
+            consume: false,
+            spawn: false,
+            spawn_addr: 0,
+            pc_out: pc,
+        ),
+        ControlSignals::Consume => TestHarnessOutput$(
+            success: false,
+            failure: false,
+            consume: true,
+            spawn: false,
+            spawn_addr: 0,
+            pc_out: pc,
+        ),
+        ControlSignals::Spawn(addr) => TestHarnessOutput$(
+            success: false,
+            failure: false,
+            consume: false,
+            spawn: true,
+            spawn_addr: addr,
+            pc_out: pc,
+        ),
+    }
+}
+
+fn _test_input_to_input(input: TestHarnessInput) -> (Instruction, uint<8>, uint<12>) {
+    let instruction = match input.op {
+        0 => Instruction::Match,
+        3 => Instruction::Jump(input.dest_op1),
+        4 => Instruction::Split(input.dest_op1, input.dest_op2),
+        5 => Instruction::Compare(input.inverted_op, input.char_op1, input.char_op2),
+        6 => Instruction::OptCompare(input.dest_op1, input.char_op1, input.char_op2),
+        _ => Instruction::Save,
+    };
+    (instruction, input.char_in, input.pc)
+}
+
+pipeline(1) alu_test_harness(
+    clk: clock,
+    i_pc: uint<12>,
+    i_char: uint<8>,
+    i_op: uint<3>,
+    i_inverted_op: bool,
+    i_char_op1: uint<8>,
+    i_char_op2: uint<8>,
+    i_dest_op1: uint<12>,
+    i_dest_op2: uint<12>,
+    o_success: inv &bool,
+    o_failure: inv &bool,
+    o_consume: inv &bool,
+    o_spawn: inv &bool,
+    o_spawn_addr: inv &uint<12>,
+    o_pc_out: inv &uint<12>) -> TestHarnessOutput {
+    let (instruction, char, pc) = _test_input_to_input(TestHarnessInput(
+        i_pc, i_char, i_op, i_inverted_op, i_char_op1, i_char_op2, i_dest_op1, i_dest_op2));
+    let alu_out = alu(instruction, char, pc);
+    let temp_output = _output_to_test_output(alu_out);
+reg;
+    set o_success = temp_output.success;
+    set o_failure = temp_output.failure;
+    set o_consume = temp_output.consume;
+    set o_spawn = temp_output.spawn;
+    set o_spawn_addr = temp_output.spawn_addr;
+    set o_pc_out = temp_output.pc_out;
+    temp_output
+}

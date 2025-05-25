@@ -1,0 +1,36 @@
+mod alu;
+
+entity count(clk: clock, rst: bool, target: int<64>) -> bool {
+    reg(clk) count reset (rst: 0) = {
+        if count == target {
+            0
+        } else {
+            trunc(count + 1)
+        }
+    };
+    count == target
+}
+
+entity tick_s(clk: clock, rst: bool) -> bool {
+    inst count(clk, rst, 16_000_000)
+}
+
+#[no_mangle]
+entity top(
+    #[no_mangle] clk: clock,
+    #[no_mangle] led: inv &bool,
+) {
+    reg(clk) rst initial(true) = false;
+
+    reg(clk) on reset(rst: false) = {
+        let tick = inst tick_s(clk, rst);
+        if tick {
+            !on
+        }
+        else {
+            on
+        }
+    };
+
+    set led = on;
+}
