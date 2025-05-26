@@ -6,17 +6,18 @@ enum ControlSignal {
 }
 
 fn alu( char: uint<8>,
-        branch: bool,
+        consume: bool,
         inverted: bool,
         char_min: uint<8>,
         char_max: uint<8>) -> ControlSignal {
     let in_range = (char >= char_min) && (char <= char_max);
-    if branch {
-        // Branches can't be inverted, so just check if the character is in range.
-        if in_range { ControlSignal::Jump } else { ControlSignal::None }
-    } else {
-        // Compare Instruction if it's not branch instruction.
-        if inverted ^^ in_range { ControlSignal::Consume } else { ControlSignal::Failure }
+    let is_match = in_range ^^ inverted;
+    match (consume, is_match) {
+        (true, true)   => ControlSignal::Consume,
+        (true, false)  => ControlSignal::Failure,
+        // If we aren't consuming than we're branching on match.
+        (false, true)  => ControlSignal::Jump,
+        (false, false) => ControlSignal::None,
     }
 }
 
@@ -40,14 +41,14 @@ fn _output_to_test_output(control: ControlSignal) -> TestHarnessOutput {
 pipeline(1) alu_test_harness(
     clk: clock,
     i_char: uint<8>,
-    i_branch: bool,
+    i_consume: bool,
     i_inverted: bool,
     i_char_min: uint<8>,
     i_char_max: uint<8>,
     o_failure: inv &bool,
     o_consume: inv &bool,
     o_jump: inv &bool) -> TestHarnessOutput {
-    let alu_out = alu(i_char, i_branch, i_inverted, i_char_min, i_char_max);
+    let alu_out = alu(i_char, i_consume, i_inverted, i_char_min, i_char_max);
     let temp_output = _output_to_test_output(alu_out);
 reg;
     set o_failure = temp_output.failure;

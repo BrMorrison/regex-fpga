@@ -6,9 +6,11 @@ struct port ROMPort<T, Addr> {
 }
 
 struct OpData {
-    opcode: uint<3>,
+    opcode: uint<2>,
     inverted: bool,
-    branch: bool,
+    is_match: bool,
+    consume: bool,
+    save_index: uint<6>,
     dest1: uint<12>,
     dest2: uint<12>,
     char_min: uint<8>,
@@ -16,13 +18,16 @@ struct OpData {
 }
 
 fn instruction_decode(instruction: uint<32>) -> OpData {
-    let opcode = trunc(instruction >> 29);
+    let opcode = trunc(instruction >> 30);
+    let inverted_and_match = (instruction & 0x2000_0000) != 0;
     OpData$(
         opcode:   opcode,
-        branch:   (opcode & 1) != 0,
-        inverted: (instruction & 0x1000_0000) != 0,
+        inverted: inverted_and_match,
+        is_match: inverted_and_match,
+        consume:  (instruction & 0x1000_0000) != 0,
+        save_index: trunc(instruction >> 16),
         dest1:    trunc(instruction >> 16),
-        dest2:    trunc(instruction >> 2),
+        dest2:    trunc(instruction >> 4),
         char_min: trunc(instruction >> 8),
         char_max: trunc(instruction),
     )
@@ -44,7 +49,7 @@ entity processor<SAddr>(
     // Instantiate the alu and parse its output.
     let control = alu::alu$(
         char:     r_char,
-        branch:   op_data.branch,
+        consume:  op_data.consume,
         inverted: op_data.inverted,
         char_min: op_data.char_min,
         char_max: op_data.char_max);
@@ -59,13 +64,10 @@ entity processor<SAddr>(
     // Use the opcode to generate internal signals
     let opcode = op_data.opcode;
     let (success, failure, consume, jump) = match opcode {
-        0b000 => (false, false, false, true),               // Jump
-        0b001 => (false, false, false, true),               // Split
-        0b010 => (false, alu_failure, alu_consume, false),  // Compare
-        0b011 => (false, false, false, alu_jump),           // Branch
-        0b100 => (false, false, false, false),              // Save
-        0b111 => (true, false, false, false),               // Match
-        _     => (false, false, false, false),              // Unused
+        0b00 => (false, alu_failure, alu_consume, alu_jump), // Branch
+        0b01 => (false, false, false, true),                 // Split
+        0b10 => (op_data.is_match, false, false, false),     // Save
+        0b11 => (false, false, false, false),                // Unused
     };
 
     // Registered Output Signals
@@ -76,12 +78,18 @@ entity processor<SAddr>(
     };
     reg(clk) r_success: bool reset(rst: false) = if success { true } else { r_success };
 
+    let freeze_output = failure || success || r_stopped;
+
     // Registered Output Addresses
-    reg(clk) r_sc: SAddr reset(rst: 0) = if consume { trunc(r_sc + 1) } else { r_sc };
-    reg(clk) r_pc: uint<12> reset(rst: 0) = if jump {
-        op_data.dest1
-    } else if failure || r_stopped {
+    reg(clk) r_sc: SAddr reset(rst: 0) = if !freeze_output && consume {
+        trunc(r_sc + 1)
+    } else {
+        r_sc
+    };
+    reg(clk) r_pc: uint<12> reset(rst: 0) = if freeze_output {
         r_pc
+    } else if jump {
+        op_data.dest1
     } else {
         trunc(r_pc + 1)
     };

@@ -26,7 +26,7 @@ def assert_none(dut):
     _assert_outputs(dut, False, False, False)
 
 def _set_inputs(dut, branch: bool, inverted: bool, char_min: str, char_max: str):
-    dut.i.i_branch = branch
+    dut.i.i_consume = not branch
     dut.i.i_inverted = inverted
     dut.i.i_char_min = to_int(char_min)
     dut.i.i_char_max = to_int(char_max)
@@ -52,7 +52,7 @@ async def test(dut):
 
     # Initialize Inputs
     s.i.i_char = 0
-    s.i.i_branch = False
+    s.i.i_consume = False
     s.i.i_inverted = False
     s.i.i_char_min = 0
     s.i.i_char_max = 0
