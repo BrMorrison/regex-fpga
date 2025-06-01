@@ -1,5 +1,6 @@
 mod alu;
 mod processor;
+mod uart;
 
 entity count(clk: clock, rst: bool, target: int<64>) -> bool {
     reg(clk) count reset (rst: 0) = {
@@ -16,15 +17,42 @@ entity tick_s(clk: clock, rst: bool) -> bool {
     inst count(clk, rst, 16_000_000)
 }
 
-#[no_mangle]
+#[no_mangle(all)]
 entity top(
-    #[no_mangle] clk: clock,
-    #[no_mangle] led: inv &bool,
+    clk: clock,
+    led_green: inv &bool,
+    led_red_0: inv &bool,
+    led_red_1: inv &bool,
+    led_red_2: inv &bool,
+    led_red_3: inv &bool,
+    pmod_1: inv &bool,
+    pmod_2: inv &bool,
+    pmod_3: inv &bool,
+    pmod_4: inv &bool,
+    pmod_7: inv &bool,
+    pmod_8: inv &bool,
+    pmod_9: inv &bool,
+    pmod_10: inv &bool,
+    uart_tx: inv &bool,
+    uart_rx: bool,
 ) {
     reg(clk) rst initial(true) = false;
 
+    let (tmp_tx, tmp_tx_inv) = port;
+    let (uart_port, uart_port_i) = port;
+    inst uart::uart_system::$<BUFFER_DEPTH: 16>(clk, rst, uart_rx, tmp_tx_inv, uart_port);
+    set uart_tx = *tmp_tx;
+
+    // Feed the UART into itself
+    let should_read = *uart_port_i.rx_ready && !*uart_port_i.tx_busy;
+    reg(clk) should_read_1 reset(rst: false) = should_read;
+    set uart_port_i.rx_enable = should_read;
+    set uart_port_i.tx_enable = should_read_1;
+    set uart_port_i.tx_byte = *uart_port_i.rx_byte;
+
+    let tick = inst tick_s(clk, rst);
+
     reg(clk) on reset(rst: false) = {
-        let tick = inst tick_s(clk, rst);
         if tick {
             !on
         }
@@ -33,5 +61,32 @@ entity top(
         }
     };
 
-    set led = on;
+    reg(clk) count: uint<4> reset(rst: 0) = {
+        if tick {
+            trunc(count + 1)
+        } else {
+            count
+        }
+    };
+
+    set led_red_0 = (count & 0x1) != 0;
+    set led_red_1 = (count & 0x2) != 0;
+    set led_red_2 = (count & 0x4) != 0;
+    set led_red_3 = (count & 0x8) != 0;
+
+    set led_green = on;
+
+    // Use PMOD to debug UART
+    set pmod_1 = uart_rx;
+    set pmod_2 = *tmp_tx;
+
+    // The other 2 ports I have jumpers connected to.
+    set pmod_7 = false;
+    set pmod_8 = false;
+
+    // Leave most of the PMOD pins unused for now.
+    set pmod_3 = false;
+    set pmod_4 = false;
+    set pmod_9 = false;
+    set pmod_10 = false;
 }

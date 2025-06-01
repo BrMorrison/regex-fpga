@@ -1,3 +1,6 @@
 [submodule "Recompile"]
 	path = Recompile
 	url = https://github.com/BrMorrison/Recompile
+[submodule "verilog/osdvu"]
+	path = verilog/osdvu
+	url = https://github.com/cyrozap/osdvu.git

@@ -3,6 +3,28 @@
 # Package:            TQ144
 ###############################################################################
 
+
 set_io clk 21
 
-set_io led 95
+# Green LED
+set_io led_green 95
+
+# Fed LEDS
+set_io led_red_0 96
+set_io led_red_1 97
+set_io led_red_2 98
+set_io led_red_3 99
+
+# UART Pins
+set_io uart_tx 8
+set_io uart_rx 9
+
+# PMOD connection
+set_io pmod_1 78
+set_io pmod_2 79
+set_io pmod_3 80
+set_io pmod_4 81
+set_io pmod_7 87
+set_io pmod_8 88
+set_io pmod_9 90
+set_io pmod_10 91

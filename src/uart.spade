@@ -1,0 +1,160 @@
+#[no_mangle(all)]
+extern entity uart<#uint baud_rate, #uint sys_clk_freq>(
+    clk: clock,
+    rst: bool,
+    rx: bool,
+    tx: inv &bool,
+    transmit: bool,
+    tx_byte: uint<8>,
+    received: inv &bool,
+    rx_byte: inv &uint<8>,
+    is_receiving: inv &bool,
+    is_transmitting: inv &bool,
+    recv_error: inv &bool,
+    rx_samples: inv &uint<4>,
+    rx_sample_countdown: inv &uint<4>
+);
+
+#[no_mangle(all)]
+extern entity synchronous_fifo<#uint DEPTH>(
+    clk: clock,
+    rst: bool,
+    w_en: bool,
+    r_en: bool,
+    data_in: uint<8>,
+    data_out: inv &uint<8>,
+    full: inv &bool,
+    empty: inv &bool,
+);
+
+// Definition of an interface to a UART module
+struct port UartPortPrivate {
+    rx: &bool,
+    tx: inv &bool,
+
+    received: inv &bool,
+    rx_byte: inv &uint<8>,
+
+    transmit: &bool,
+    tx_byte: &uint<8>,
+
+    is_transmitting: inv &bool,
+}
+
+// A public UART port interface for other modules to use.
+struct port UartPort{
+    rx_enable: &bool,
+    rx_ready: inv &bool,
+    rx_byte: inv &uint<8>,
+
+    tx_enable: &bool,
+    tx_byte: &uint<8>,
+    tx_busy: inv &bool,
+}
+
+entity uart_wrapper(clk: clock, rst: bool, uart_port: UartPortPrivate) {
+    let (_, is_receiving_inv) = port;
+    let (_, recv_err_inv) = port;
+
+    let (_, rx_samples_inv) = port;
+    let (_, rx_sample_countdown_inv) = port;
+
+    inst uart::<9600, 12000000>$(
+        clk: clk,
+        rst: rst,
+
+        // UART port signals
+        rx: *uart_port.rx,
+        tx: uart_port.tx,
+        transmit: *uart_port.transmit,
+        tx_byte: *uart_port.tx_byte,
+        received: uart_port.received,
+        rx_byte: uart_port.rx_byte,
+        is_transmitting: uart_port.is_transmitting,
+
+        // Unused signals
+        is_receiving: is_receiving_inv,
+        recv_error: recv_err_inv,
+        rx_samples: rx_samples_inv,
+        rx_sample_countdown: rx_sample_countdown_inv,
+    );
+}
+
+entity uart_subsystem<#uint BUFFER_DEPTH>(
+    clk: clock,
+    rst: bool,
+    rx: bool,
+    tx: inv &bool,
+    uart_instance: inv UartPortPrivate,
+    uart_port: UartPort)
+{
+    // RX FIFO
+    let (_, rx_full_i) = port;
+    let (rx_empty, rx_empty_i) = port;
+    inst synchronous_fifo::<BUFFER_DEPTH>$(
+        clk: clk,
+        rst: rst,
+        w_en: *uart_instance.received,
+        r_en: *uart_port.rx_enable,
+        data_in: *uart_instance.rx_byte,
+        data_out: uart_port.rx_byte,
+        full: rx_full_i,
+        empty: rx_empty_i,
+    );
+
+    // TX FIFO
+    let (tx_empty, tx_empty_i) = port;
+
+    // Transmit when there is data in the TX FIFO and we aren't already transmitting (with a one
+    // cycle delay to give the FIFO time to read the next value before sending it to the UART).
+    reg(clk) transmit_ready reset(rst: false) = !(*tx_empty || *uart_instance.is_transmitting);
+    reg(clk) should_transmit reset(rst: false) = transmit_ready;
+
+    inst synchronous_fifo::<BUFFER_DEPTH>$(
+        clk: clk,
+        rst: rst,
+        w_en: *uart_port.tx_enable,
+        r_en: transmit_ready,
+        data_in: *uart_port.tx_byte,
+        data_out: uart_instance.tx_byte,
+        full: uart_port.tx_busy,
+        empty: tx_empty_i,
+    );
+
+    // UART Instance
+    set uart_instance.transmit = should_transmit;
+    set uart_instance.rx = rx;
+    set tx = *uart_instance.tx;
+
+    set uart_port.rx_ready = !*rx_empty;
+}
+
+entity uart_system<#uint BUFFER_DEPTH>(
+    clk: clock,
+    rst: bool,
+    rx: bool,
+    tx: inv &bool,
+    uart_port: UartPort)
+{
+    let (uart_inst, uart_inst_i) = port;
+    inst uart_wrapper(clk, rst, uart_inst);
+    inst uart_subsystem::<BUFFER_DEPTH>(clk, rst, rx, tx, uart_inst_i, uart_port);
+}
+
+// ------------------- Test Code -------------------
+
+//entity uart_test_harness(clk: clock, rst: bool, rx_val: uint<8>, rx_complete: bool) -> uint<8> {
+//    let (fake_uart, fake_uart_inv) = port;
+//
+//    let (_, fake_tx_inv) = port;
+//    let _ = inst uart_subsystem(clk, rst, false, fake_tx_inv, fake_uart_inv);
+//
+//    reg(clk) is_transmitting reset(rst: false) = !is_transmitting && *fake_uart.transmit;
+//
+//    set fake_uart.tx = false;
+//    set fake_uart.rx_byte = rx_val;
+//    set fake_uart.received = rx_complete;
+//    set fake_uart.is_transmitting = is_transmitting;
+//
+//    *fake_uart.tx_byte
+//}

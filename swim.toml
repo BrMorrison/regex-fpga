@@ -1,5 +1,9 @@
 name = "regex"
 
+[verilog]
+include = []
+sources = ["verilog/osdvu/uart.v", "verilog/*.v"]
+
 [synthesis]
 top = "top"
 command = "synth_ice40"

@@ -17,6 +17,7 @@ struct OpData {
     char_max: uint<8>,
 }
 
+/// Helper for parsing arguments out of an instruction.
 fn instruction_decode(instruction: uint<32>) -> OpData {
     let opcode = trunc(instruction >> 30);
     let inverted_and_match = (instruction & 0x2000_0000) != 0;
@@ -33,6 +34,7 @@ fn instruction_decode(instruction: uint<32>) -> OpData {
     )
 }
 
+/// A component that can execute a single regex thread.
 entity processor<SAddr>(
     clk: clock,
     rst: bool,
