@@ -1,4 +1,4 @@
-# top = alu::alu_test_harness
+# top = regex::alu::alu_test_harness
 
 import cocotb
 from spade import SpadeExt

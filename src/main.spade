@@ -1,6 +1,5 @@
-mod alu;
-mod processor;
-mod uart;
+mod io;
+mod regex;
 
 entity count(clk: clock, rst: bool, target: int<64>) -> bool {
     reg(clk) count reset (rst: 0) = {
@@ -40,7 +39,7 @@ entity top(
 
     let (tmp_tx, tmp_tx_inv) = port;
     let (uart_port, uart_port_i) = port;
-    inst uart::uart_system::$<BUFFER_DEPTH: 16>(clk, rst, uart_rx, tmp_tx_inv, uart_port);
+    inst io::uart::uart_system::$<BUFFER_DEPTH: 16>(clk, rst, uart_rx, tmp_tx_inv, uart_port);
     set uart_tx = *tmp_tx;
 
     // Feed the UART into itself

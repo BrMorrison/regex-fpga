@@ -1,4 +1,4 @@
-# top = processor::processor_test_harness
+# top = regex::processor::processor_test_harness
 
 import recompile.instruction as inst
 from recompile.assembler import assemble

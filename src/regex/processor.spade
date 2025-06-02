@@ -1,4 +1,4 @@
-use lib::alu;
+use lib::regex::alu;
 
 struct port ROMPort<T, Addr> {
     addr: inv &Addr,
