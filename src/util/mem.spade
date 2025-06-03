@@ -1,0 +1,78 @@
+#[no_mangle(all)]
+extern entity memory<#uint ADDR_BITS, #uint DATA_BITS>(
+    clk: clock, rst: bool,
+    w_en: bool, r_en: bool,
+    w_addr: uint<ADDR_BITS>, r_addr: uint<ADDR_BITS>,
+    w_data: uint<DATA_BITS>, r_data: inv &uint<DATA_BITS>,
+);
+
+entity fifo<#uint ADDR_BITS, #uint DATA_BITS>(
+    clk: clock, rst: bool,
+    w_en: bool, r_en: bool,
+    data_in: uint<DATA_BITS>, data_out: inv &uint<DATA_BITS>,
+    full: inv &bool, empty: inv &bool)
+{
+    decl w_en_full;
+    reg(clk) w_addr reset(rst: 0) = {
+        if w_en_full {
+            trunc(w_addr + 1)
+        } else {
+            w_addr
+        }
+    };
+
+    decl r_en_full;
+    reg(clk) r_addr reset(rst: 0) = {
+        if r_en_full {
+            trunc(r_addr + 1)
+        } else {
+            r_addr
+        }
+    };
+
+    let tmp_empty = w_addr == r_addr;
+    let r_en_full = !tmp_empty && r_en;
+    set empty = tmp_empty;
+
+    // This logic means you can't write to the last spot in the FIFO or else the w_addr would wrap
+    // around to the r_addr and the FIFO would look empty... but it's easy to implement.
+    let tmp_full = trunc(w_addr + 1) == r_addr;
+    let w_en_full = !tmp_full && w_en;
+    set full = tmp_full;
+
+    inst memory::$<ADDR_BITS: ADDR_BITS, DATA_BITS: DATA_BITS>$(
+        clk: clk, rst: rst,
+        w_en: w_en_full, r_en: r_en_full,
+        w_addr: w_addr, r_addr: r_addr,
+        w_data: data_in, r_data: data_out,
+    );
+}
+
+// ----------------- Test Code -----------------
+struct FifoTestOut {
+    data: uint<8>,
+    full: bool,
+    empty: bool,
+}
+
+entity fifo_test_harness(
+    clk: clock, rst: bool,
+    w_en: bool, r_en: bool,
+    data_in: uint<8>, data_out: inv &uint<8>,
+    full: inv &bool, empty: inv &bool) -> FifoTestOut
+{
+    let (fifo_out, fifo_out_i) = port;
+    let (fifo_full, fifo_full_i) = port;
+    let (fifo_empty, fifo_empty_i) = port;
+    inst fifo::<2, 8>(
+        clk, rst,
+        w_en, r_en,
+        data_in, fifo_out_i,
+        fifo_full_i, fifo_empty_i);
+
+    set data_out = *fifo_out;
+    set full = *fifo_full;
+    set empty = *fifo_empty;
+
+    FifoTestOut$(data: *fifo_out, full: *fifo_full, empty: *fifo_empty)
+}

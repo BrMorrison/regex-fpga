@@ -1,3 +1,5 @@
+use lib::util::mem;
+
 #[no_mangle(all)]
 extern entity uart<#uint baud_rate, #uint sys_clk_freq>(
     clk: clock,
@@ -80,7 +82,7 @@ entity uart_wrapper(clk: clock, rst: bool, uart_port: UartPortPrivate) {
     );
 }
 
-entity uart_subsystem<#uint BUFFER_DEPTH>(
+entity uart_subsystem<#uint LOG_BUFFER_DEPTH>(
     clk: clock,
     rst: bool,
     rx: bool,
@@ -91,7 +93,7 @@ entity uart_subsystem<#uint BUFFER_DEPTH>(
     // RX FIFO
     let (_, rx_full_i) = port;
     let (rx_empty, rx_empty_i) = port;
-    inst synchronous_fifo::<BUFFER_DEPTH>$(
+    inst mem::fifo::<LOG_BUFFER_DEPTH, 8>$(
         clk: clk,
         rst: rst,
         w_en: *uart_instance.received,
@@ -110,7 +112,7 @@ entity uart_subsystem<#uint BUFFER_DEPTH>(
     reg(clk) transmit_ready reset(rst: false) = !(*tx_empty || *uart_instance.is_transmitting);
     reg(clk) should_transmit reset(rst: false) = transmit_ready;
 
-    inst synchronous_fifo::<BUFFER_DEPTH>$(
+    inst mem::fifo::<LOG_BUFFER_DEPTH, 8>$(
         clk: clk,
         rst: rst,
         w_en: *uart_port.tx_enable,
@@ -129,7 +131,7 @@ entity uart_subsystem<#uint BUFFER_DEPTH>(
     set uart_port.rx_ready = !*rx_empty;
 }
 
-entity uart_system<#uint BUFFER_DEPTH>(
+entity uart_system<#uint LOG_BUFFER_DEPTH>(
     clk: clock,
     rst: bool,
     rx: bool,
@@ -138,7 +140,7 @@ entity uart_system<#uint BUFFER_DEPTH>(
 {
     let (uart_inst, uart_inst_i) = port;
     inst uart_wrapper(clk, rst, uart_inst);
-    inst uart_subsystem::<BUFFER_DEPTH>(clk, rst, rx, tx, uart_inst_i, uart_port);
+    inst uart_subsystem::<LOG_BUFFER_DEPTH>(clk, rst, rx, tx, uart_inst_i, uart_port);
 }
 
 // ------------------- Test Code -------------------
